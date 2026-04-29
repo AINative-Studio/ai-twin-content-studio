@@ -3,7 +3,7 @@
 
 **Prepared By:** AINative Studio  
 **Date:** April 29, 2026  
-**Version:** 2.0 (Frontend Implementation)  
+**Version:** 3.0 (AI Kit + SDK Integration)  
 **Original PRD:** Alexandra Mitchelson, June 19, 2025 v1.0  
 **Status:** Active Development  
 
@@ -11,454 +11,561 @@
 
 ## 1. Purpose
 
-AI Twin Content Studio is a web application that centralizes the entire workflow of AI-powered short-form educational content creation. It replaces a fragmented stack (ChatGPT, CapCut, Snapchat, TikTok, Captions, etc.) with a single cohesive platform.
+AI Twin Content Studio is a web application that centralizes the entire workflow of AI-powered short-form educational content creation. It replaces a fragmented stack (CapCut, Snapchat, TikTok, Captions, etc.) with a single cohesive platform built **entirely on AINative libraries and APIs**.
 
-**All AI capabilities are powered by AINative APIs** — no OpenAI/ChatGPT dependency. The platform uses:
-- `POST /api/v1/public/chat/completions` — script generation (Claude, MiniMax M2.7, NousCoder)
-- `POST /api/v1/public/multimodal/tts` — voice synthesis (MiniMax TTS)
-- `POST /api/v1/public/multimodal/video/t2v` + `i2v` — video generation (CogVideoX via RunPod)
-- `POST /api/v1/public/multimodal/avatar/generate` — AI twin video (HeyGen/D-ID wrapper)
-- `POST /api/v1/public/audio/transcribe` — Whisper transcription
-- `POST /api/v1/public/embeddings/generate` — semantic embeddings (free)
-- `POST /api/v1/public/memory/v2/remember` — creator preference memory
-- ZeroDB file storage — video/image asset management
+**No OpenAI/ChatGPT dependency.** All AI capabilities are powered by:
+- **`@ainative/next-sdk`** — server-side auth, server components, API route protection
+- **`@ainative/react-sdk`** (re-exported from `@ainative/next-sdk/client`) — `useChat`, `useCredits`, `useMemory`, `useAgent`, `useTask`, `useThread`
+- **`@ainative/aikit-react`** — `StreamingMessage`, `StreamingIndicator`, `CodeBlock` UI components
+- **AINative API** at `https://api.ainative.studio/api/v1/public`
 
-**API Base:** `https://api.ainative.studio/api/v1/public`  
-**Auth:** Bearer token (JWT) or API key (`X-API-Key`)
+**AI Kit Dashboard reference:** https://ainative.studio/ai-kit — use this as the design reference for the analytics and usage dashboard.
 
 ---
 
-## 2. Tech Stack
+## 2. AINative Library Surface
+
+### `@ainative/next-sdk` (server)
+
+```ts
+import {
+  createServerClient,      // Server Components, API routes, Server Actions
+  createAgentServerClient, // Agent-specific server client
+  createAgentWebhookHandler, // Webhook handler factory
+  getSession,              // Get current auth session (App Router)
+  getApiKey,               // Get API key from session cookie
+  withAuth,                // Middleware: protect App Router routes
+  withAuthPages,           // Middleware: protect Pages Router routes
+} from '@ainative/next-sdk/server';
+```
+
+### `@ainative/next-sdk` (client) → wraps `@ainative/react-sdk`
+
+```ts
+import {
+  AINativeProvider,  // Root provider — wraps entire app
+  useAINative,       // Access provider config + base URL
+  useChat,           // Chat completions with streaming (claude-sonnet-4-6, minimax, nouscoderv1)
+  useCredits,        // Credit balance + usage tracking
+  useAgent,          // Agent CRUD + lifecycle management
+  useTask,           // Swarm task submission + status polling
+  useMemory,         // ZeroMemory v2: remember, recall, forget
+  useThread,         // Persistent conversation threads with search
+} from '@ainative/next-sdk/client';
+```
+
+### `@ainative/aikit-react`
+
+```ts
+import {
+  StreamingMessage,    // SSE/streaming chat message with markdown, code highlight, typewriter
+  StreamingIndicator,  // Animated typing indicator
+  CodeBlock,           // Syntax-highlighted code block
+} from '@ainative/aikit-react';
+```
+
+### AI Kit UI Demos (live reference at https://ainative.studio/ai-kit)
+
+| Demo | Path | What it shows |
+|---|---|---|
+| Streaming Chat | `/ai-kit/streaming` | `StreamingMessage` + `useChat` in action |
+| Agent Orchestration | `/ai-kit/agents` | `useAgent` + `useTask` + swarm coordination |
+| Safety & Moderation | `/ai-kit/safety` | PII detection, content moderation |
+| **Usage Dashboard** | `/ai-kit/dashboard` | **Reference design for our analytics dashboard** |
+| Video Recording | `/ai-kit/video` | Screen capture + Whisper transcription |
+| A2UI Protocol | `/ai-kit/a2ui` | JSON-driven UI generation |
+
+---
+
+## 3. Tech Stack
 
 | Layer | Technology |
 |---|---|
 | Framework | Next.js 15 (App Router) |
+| AINative SDKs | `@ainative/next-sdk`, `@ainative/aikit-react` |
 | Styling | Tailwind CSS v4 |
-| UI Components | shadcn/ui |
-| State Management | Zustand |
-| Data Fetching | TanStack Query v5 |
+| UI Primitives | shadcn/ui |
+| State Management | Zustand (for local studio state only) |
+| Server State | `@ainative/react-sdk` hooks + TanStack Query v5 (for non-AINative data) |
 | Forms | React Hook Form + Zod |
 | Video Playback | Video.js |
 | Drag & Drop | dnd-kit |
 | Calendar | FullCalendar (React) |
-| Charts / Analytics | Recharts |
+| Charts | Recharts — **styled to match `/ai-kit/dashboard`** |
 | File Upload | react-dropzone |
-| Auth | AINative JWT (cookie-based) |
-| Deployment | Railway (Dockerfile, same org) |
+| Auth | `@ainative/next-sdk` (`withAuth` middleware + `getSession`) |
+| Deployment | Railway (Dockerfile) |
 
 ---
 
-## 3. Project Structure
+## 4. Project Structure
 
 ```
 ai-twin-content-studio/
 ├── app/
 │   ├── (auth)/
-│   │   ├── login/page.tsx
+│   │   ├── login/page.tsx          # Uses createServerClient for session check
 │   │   └── signup/page.tsx
 │   ├── (dashboard)/
-│   │   ├── layout.tsx              # Sidebar + nav
-│   │   ├── page.tsx                # Home dashboard
+│   │   ├── layout.tsx              # AINativeProvider wraps all dashboard routes
+│   │   ├── page.tsx                # Home — useCredits() balance widget
 │   │   ├── calendar/page.tsx       # Content calendar
 │   │   ├── scripts/
-│   │   │   ├── page.tsx            # Script list
-│   │   │   └── [id]/page.tsx       # Script editor
+│   │   │   ├── page.tsx
+│   │   │   └── [id]/page.tsx       # ScriptEditor — useChat() + StreamingMessage
 │   │   ├── twins/
-│   │   │   ├── page.tsx            # Twin library
-│   │   │   └── [id]/page.tsx       # Twin editor
-│   │   ├── studio/page.tsx         # Video creation studio
-│   │   ├── bulk/page.tsx           # Bulk reel builder
-│   │   ├── publish/page.tsx        # Publishing dashboard
-│   │   ├── analytics/page.tsx      # Analytics dashboard
-│   │   └── settings/page.tsx       # Account + integrations
-│   ├── api/                        # Next.js route handlers (proxy to AINative)
-│   │   ├── auth/[...nextauth]/route.ts
-│   │   └── proxy/[...path]/route.ts
-│   ├── layout.tsx
+│   │   │   ├── page.tsx
+│   │   │   └── [id]/page.tsx
+│   │   ├── studio/page.tsx         # useChat + useMemory + StreamingMessage
+│   │   ├── bulk/page.tsx           # useTask() for batch job polling
+│   │   ├── publish/page.tsx
+│   │   ├── analytics/page.tsx      # Mirrors /ai-kit/dashboard design
+│   │   └── settings/page.tsx       # useCredits() + useAgent()
+│   ├── api/
+│   │   ├── auth/route.ts           # createAgentWebhookHandler
+│   │   └── webhooks/
+│   │       ├── heygen/route.ts     # createAgentWebhookHandler for avatar completion
+│   │       └── publishing/route.ts # Social platform delivery callbacks
+│   ├── layout.tsx                  # Root — AINativeProvider, global styles
 │   └── globals.css
 ├── components/
 │   ├── ui/                         # shadcn primitives
 │   ├── layout/
 │   │   ├── Sidebar.tsx
 │   │   ├── TopBar.tsx
-│   │   └── MobileNav.tsx
+│   │   └── CreditsWidget.tsx       # useCredits() — live balance in nav
 │   ├── calendar/
-│   │   ├── ContentCalendar.tsx     # FullCalendar wrapper
+│   │   ├── ContentCalendar.tsx
 │   │   ├── CalendarItem.tsx
 │   │   └── ScheduleDrawer.tsx
 │   ├── scripts/
-│   │   ├── ScriptEditor.tsx        # Rich text editor
-│   │   ├── ScriptGenerator.tsx     # AI generation UI
+│   │   ├── ScriptEditor.tsx        # <StreamingMessage> for AI output
+│   │   ├── ScriptGenerator.tsx     # useChat({ model: 'claude-sonnet-4-6' })
 │   │   └── ToneSelector.tsx
 │   ├── twins/
 │   │   ├── TwinCard.tsx
-│   │   ├── TwinCreator.tsx         # Avatar builder
-│   │   ├── StylePresetPicker.tsx   # goddess/futurist/etc.
+│   │   ├── TwinCreator.tsx
+│   │   ├── StylePresetPicker.tsx
 │   │   └── VoiceSelector.tsx
 │   ├── studio/
 │   │   ├── VideoUploader.tsx
 │   │   ├── VideoPreview.tsx
-│   │   ├── CaptionEditor.tsx       # SRT timing editor
+│   │   ├── CaptionEditor.tsx
 │   │   ├── VoiceoverControls.tsx
-│   │   └── RenderProgress.tsx
+│   │   └── RenderProgress.tsx      # useTask() job polling
 │   ├── bulk/
 │   │   ├── CSVImporter.tsx
 │   │   ├── BatchJobCard.tsx
-│   │   └── RenderQueue.tsx
+│   │   └── RenderQueue.tsx         # useTask() per-item status
 │   ├── publish/
-│   │   ├── PlatformConnector.tsx   # OAuth connect UI
+│   │   ├── PlatformConnector.tsx
 │   │   ├── PublishScheduler.tsx
-│   │   ├── PlatformPreview.tsx     # Instagram/TikTok frame preview
+│   │   ├── PlatformPreview.tsx
 │   │   └── PublishHistory.tsx
 │   └── analytics/
-│       ├── MetricsGrid.tsx
-│       ├── EngagementChart.tsx
+│       ├── MetricsGrid.tsx         # Styled after /ai-kit/dashboard metrics grid
+│       ├── EngagementChart.tsx     # Recharts — same palette as AI Kit dashboard
 │       ├── TwinPerformanceTable.tsx
 │       └── ExportButton.tsx
 ├── lib/
-│   ├── api/
-│   │   ├── client.ts               # Typed AINative API client
-│   │   ├── scripts.ts
-│   │   ├── twins.ts
-│   │   ├── calendar.ts
-│   │   ├── studio.ts
-│   │   ├── bulk.ts
-│   │   ├── publishing.ts
-│   │   └── analytics.ts
+│   ├── ainative.ts                 # Re-export SDK hooks + createServerClient
 │   ├── hooks/
-│   │   ├── useScriptGenerator.ts
-│   │   ├── useTwins.ts
-│   │   ├── useCalendar.ts
-│   │   ├── useVideoRender.ts
-│   │   ├── useBulkJobs.ts
-│   │   ├── usePublishing.ts
-│   │   └── useAnalytics.ts
+│   │   ├── useScriptGenerator.ts   # Wraps useChat with script system prompt
+│   │   ├── useTwins.ts             # REST calls to /twins CRUD
+│   │   ├── useCalendar.ts          # REST calls to /content/calendar
+│   │   ├── useVideoRender.ts       # Wraps useTask for avatar/render jobs
+│   │   ├── useBulkJobs.ts          # Wraps useTask for bulk queues
+│   │   ├── usePublishing.ts        # Social publishing REST calls
+│   │   └── useAnalytics.ts         # Social analytics REST calls
 │   ├── stores/
-│   │   ├── authStore.ts
-│   │   ├── studioStore.ts
-│   │   └── bulkStore.ts
+│   │   ├── studioStore.ts          # Local video editor state (Zustand)
+│   │   └── bulkStore.ts            # Local bulk import state (Zustand)
 │   └── utils/
-│       ├── formatDuration.ts
-│       ├── platformLimits.ts       # Per-platform video/caption specs
+│       ├── platformLimits.ts
 │       └── creditEstimator.ts
+├── middleware.ts                   # withAuth() — protects all /dashboard/* routes
 ├── types/
-│   ├── api.ts                      # Response types matching AINative OpenAPI
 │   ├── twin.ts
 │   ├── calendar.ts
 │   ├── studio.ts
 │   └── analytics.ts
-├── public/
-│   └── style-presets/              # Thumbnail images for style presets
+├── public/style-presets/
 ├── Dockerfile
 ├── railway.toml
 ├── next.config.ts
-├── tailwind.config.ts
-├── tsconfig.json
 └── package.json
 ```
 
 ---
 
-## 4. Feature Specifications
+## 5. SDK Integration Patterns
 
-### 4.1 Content Calendar (`/calendar`)
+### 5.1 Root Layout — `AINativeProvider`
 
-**Purpose:** Visualize, schedule, and manage all upcoming content.
+```tsx
+// app/layout.tsx
+import { AINativeProvider } from '@ainative/next-sdk/client';
 
-**UI:**
-- Month/week/day view toggle (FullCalendar)
-- Drag-and-drop to reschedule items
-- Color-coded by platform (Instagram=pink, TikTok=red, YouTube=red-dark, LinkedIn=blue)
-- Click item → slide-over drawer with script preview + publish status
-
-**API calls:**
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        <AINativeProvider config={{ apiKey: process.env.NEXT_PUBLIC_AINATIVE_API_KEY! }}>
+          {children}
+        </AINativeProvider>
+      </body>
+    </html>
+  );
+}
 ```
-GET  /content/calendar?from=2026-04-01&to=2026-04-30
-POST /content/calendar
-PATCH /content/calendar/{id}
-DELETE /content/calendar/{id}
+
+### 5.2 Middleware — `withAuth`
+
+```ts
+// middleware.ts
+import { withAuth } from '@ainative/next-sdk/server';
+
+export default withAuth;
+
+export const config = {
+  matcher: ['/dashboard/:path*'],
+};
 ```
 
-**Component flow:**
-1. `ContentCalendar` renders FullCalendar with events from `useCalendar()` hook
-2. Drag-drop fires `PATCH /content/calendar/{id}` with new `scheduled_at`
-3. "New Content" button opens `ScheduleDrawer` with `ScriptEditor` + twin selector
+### 5.3 Script Generator — `useChat` + `StreamingMessage`
 
----
+```tsx
+// components/scripts/ScriptGenerator.tsx
+'use client';
+import { useChat } from '@ainative/next-sdk/client';
+import { StreamingMessage, StreamingIndicator } from '@ainative/aikit-react';
 
-### 4.2 Script Generator (`/scripts`)
+export function ScriptGenerator({ topic, tone, duration, platform }) {
+  const { messages, isLoading, error, sendMessage } = useChat({
+    model: 'claude-sonnet-4-6',
+  });
 
-**Purpose:** AI-powered script creation with tone/style presets.
+  const generate = () => sendMessage([{
+    role: 'system',
+    content: `You are a short-form content scriptwriter. Write a ${duration}s script on "${topic}" in a ${tone} tone optimized for ${platform}. Be punchy, hook in the first 3 words.`,
+  }, {
+    role: 'user',
+    content: topic,
+  }]);
 
-**UI:**
-- Topic input + tone selector (educational, entertaining, inspirational, professional)
-- Target duration slider (15s / 30s / 60s)
-- Platform selector (affects script length and CTA style)
-- "Generate" button → streams AI response character by character
-- Editable output with word count + estimated read time
-- "Save to Calendar" button
-
-**API calls:**
+  return (
+    <div>
+      {isLoading && <StreamingIndicator />}
+      {messages.filter(m => m.role === 'assistant').map((m, i) => (
+        <StreamingMessage key={i} content={m.content} />
+      ))}
+      {error && <p className="text-red-400">{error.message}</p>}
+      <button onClick={generate}>Generate Script</button>
+    </div>
+  );
+}
 ```
-POST /chat/completions
-  body: {
-    model: "claude-sonnet-4-6",
-    messages: [{
-      role: "system",
-      content: "You are a short-form content scriptwriter. Write a {duration}s script on '{topic}' in a {tone} tone for {platform}."
-    }, {
-      role: "user", content: topic
-    }],
-    stream: true
+
+### 5.4 Credits Widget — `useCredits`
+
+```tsx
+// components/layout/CreditsWidget.tsx
+'use client';
+import { useCredits } from '@ainative/next-sdk/client';
+
+export function CreditsWidget() {
+  const { balance, isLoading } = useCredits();
+  return (
+    <div className="text-sm text-gray-400">
+      {isLoading ? '...' : `${balance?.remaining_credits?.toLocaleString()} credits`}
+    </div>
+  );
+}
+```
+
+### 5.5 Render Job Polling — `useTask`
+
+```tsx
+// components/studio/RenderProgress.tsx
+'use client';
+import { useTask } from '@ainative/next-sdk/client';
+
+export function RenderProgress({ taskId }) {
+  const { task, isLoading } = useTask(taskId, { pollInterval: 3000 });
+
+  return (
+    <div>
+      <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-violet-500 transition-all"
+          style={{ width: `${task?.progress ?? 0}%` }}
+        />
+      </div>
+      <p className="text-sm text-gray-400 mt-1">
+        {task?.status === 'completed' ? 'Done!' : `${task?.status ?? 'Queued'}...`}
+      </p>
+    </div>
+  );
+}
+```
+
+### 5.6 Creator Memory — `useMemory`
+
+```tsx
+// lib/hooks/useScriptGenerator.ts — personalizes suggestions over time
+import { useMemory } from '@ainative/next-sdk/client';
+
+export function useScriptGenerator(creatorId: string) {
+  const { remember, recall } = useMemory();
+
+  async function generateWithMemory(topic: string) {
+    // Recall past preferences
+    const prefs = await recall(topic, { entity_id: creatorId, limit: 3 });
+    const context = prefs.map(m => m.content).join('\n');
+
+    // ... build prompt with context, call useChat ...
+
+    // Remember this generation
+    await remember(`Generated ${topic} script in ${tone} tone`, {
+      entity_id: creatorId,
+      tags: ['script', 'generation', platform],
+    });
   }
+
+  return { generateWithMemory };
+}
 ```
 
-**Notes:**
-- Streaming via SSE — show typewriter effect as script generates
-- Script stored locally in Zustand `studioStore` until saved
-- Memory: `POST /memory/v2/remember` stores user's preferred tone/topics for personalization
+### 5.7 Server Component — `createServerClient`
 
----
+```tsx
+// app/(dashboard)/page.tsx — Server Component
+import { createServerClient, getApiKey } from '@ainative/next-sdk/server';
 
-### 4.3 AI Twin Library (`/twins`)
+export default async function DashboardPage() {
+  const apiKey = await getApiKey();
+  const client = createServerClient({ apiKey });
+  const balance = await client.credits.balance();
 
-**Purpose:** Create and manage multiple AI avatar personas.
-
-**UI:**
-- Grid of twin cards with thumbnail, name, style preset badge, and voice label
-- "Create Twin" button → multi-step wizard:
-  1. Name + style preset picker (goddess / futurist / celestial / corporate / minimalist / bold)
-  2. Upload reference photo or video (for avatar model)
-  3. Voice selector — pick from TTS voice library or record 30s sample for voice clone
-  4. Personality/tone tags (friendly, authoritative, playful, calm)
-  5. Preview: generate 5s sample clip
-- Clone, edit, delete actions on each card
-
-**API calls:**
-```
-GET    /twins
-POST   /twins
-PATCH  /twins/{id}
-POST   /twins/{id}/clone
-DELETE /twins/{id}
-POST   /multimodal/tts           # voice preview
-POST   /multimodal/avatar/generate  # sample clip generation
+  return <DashboardClient initialBalance={balance} />;
+}
 ```
 
-**Style preset thumbnails:** static images in `/public/style-presets/` showing visual reference for each preset.
+### 5.8 Webhook Handler — `createAgentWebhookHandler`
 
----
+```ts
+// app/api/webhooks/heygen/route.ts
+import { createAgentWebhookHandler } from '@ainative/next-sdk/server';
 
-### 4.4 Video Creation Studio (`/studio`)
-
-**Purpose:** End-to-end video creation — upload or record, apply twin, add voiceover + captions, export.
-
-**UI:** Split-panel layout
-- **Left:** Script panel (ScriptEditor, read-only if imported from calendar)
-- **Center:** Video preview canvas (VideoPreview with Video.js)
-- **Right:** Controls panel
-  - Twin selector (TwinCard carousel)
-  - Voice controls (speed, pitch, preview)
-  - Caption editor (timeline with draggable segments)
-  - Export button + platform format selector
-
-**Workflow:**
-1. Upload video (`VideoUploader` → ZeroDB file API) or use t2v generation
-2. Select twin → fires `POST /multimodal/avatar/generate`
-3. TTS voiceover → `POST /multimodal/tts`
-4. Auto-captions → `POST /captions/generate` (Whisper) → shows in `CaptionEditor`
-5. Fine-tune caption timing in timeline editor
-6. Burn-in captions → `POST /captions/{id}/burn-in`
-7. Export to publish queue or download
-
-**Render progress:** `RenderProgress` polls `GET /multimodal/avatar/status/{job_id}` every 3s, shows percent + ETA.
-
----
-
-### 4.5 Bulk Reel Builder (`/bulk`)
-
-**Purpose:** Generate hundreds of short reels from a CSV or content calendar selection.
-
-**UI:**
-- Two input modes:
-  - "Upload CSV" — drag-drop CSV with columns: `prompt`, `twin_id`, `voice_id`, `platform`
-  - "From Calendar" — multi-select calendar items for batch render
-- Twin + voice override selectors (apply same to all if desired)
-- "Start Batch" button → shows `RenderQueue` with per-item status cards
-- Download ZIP or "Publish All" button when complete
-
-**API calls:**
-```
-POST /bulk/import-scripts       # creates batch job, returns job_id
-GET  /bulk/{job_id}/status      # poll every 5s
-GET  /bulk/{job_id}/download    # once complete
-```
-
-**RenderQueue component:**
-- Live-updating table: item #, prompt preview, status (queued/rendering/done/failed), ETA
-- Failed items show error + "Retry" button
-- WebSocket connection preferred if available, falls back to polling
-
----
-
-### 4.6 Publishing Dashboard (`/publish`)
-
-**Purpose:** Connect social accounts and schedule or instantly publish content.
-
-**UI:**
-- **Platform connections panel:** icons for Instagram, TikTok, LinkedIn, YouTube — green checkmark if connected, "Connect" button if not
-- **Content queue:** list of scheduled items from calendar with publish datetime, platform, twin used, status
-- **Platform preview:** toggle between Instagram Reels / TikTok / LinkedIn frame previews showing how the video will appear
-- **Instant publish:** drag any completed video → "Publish Now" button per platform
-
-**OAuth flow:**
-```
-GET /social/connect/{platform}    # redirects to platform OAuth
-GET /social/callback/{platform}   # handled by backend, redirects back with success
-GET /social/connections           # show which are connected
-```
-
-**Publish:**
-```
-POST /publishing/publish          # immediate
-POST /publishing/schedule         # queued (Celery)
-GET  /publishing/history          # past publishes with status
-```
-
-**Platform format specs** (enforced client-side in `platformLimits.ts`):
-| Platform | Aspect | Max Duration | Max File Size | Caption Limit |
-|---|---|---|---|---|
-| Instagram Reels | 9:16 | 90s | 1GB | 2200 chars |
-| TikTok | 9:16 | 60s | 287MB | 150 chars |
-| LinkedIn | 1:1 or 16:9 | 10min | 5GB | 3000 chars |
-| YouTube Shorts | 9:16 | 60s | 128GB | 5000 chars |
-
----
-
-### 4.7 Analytics Dashboard (`/analytics`)
-
-**Purpose:** Unified performance reporting across platforms and twin personas.
-
-**UI:**
-- Date range picker (last 7/30/90 days, custom)
-- Filter by: platform, twin persona, topic tag
-- Metrics grid: views, likes, shares, comments, reach, engagement rate
-- Engagement chart (Recharts LineChart — by day/week)
-- Twin performance table: rank each twin by total engagement
-- Top videos table: sortable by views, likes, engagement
-- Export button → PDF or CSV
-
-**API calls:**
-```
-GET /analytics/social?platform=instagram&date_from=...&date_to=...&group_by=day
-GET /analytics/social/summary
-POST /analytics/social/export   # returns signed download URL
+export const POST = createAgentWebhookHandler({
+  secret: process.env.HEYGEN_WEBHOOK_SECRET!,
+  onEvent: async (event) => {
+    if (event.type === 'video.completed') {
+      // Update bulk job item status in DB via AINative API
+    }
+  },
+});
 ```
 
 ---
 
-### 4.8 Settings (`/settings`)
+## 6. Analytics Dashboard — Mirror `/ai-kit/dashboard`
 
-- Profile (name, avatar, timezone)
-- API key display (read-only, for direct API access)
-- Connected platforms (same as publish panel)
-- Billing / credits display (pull from AINative billing API)
-- Notification preferences
+The analytics dashboard at `/analytics` must visually match the AI Kit usage dashboard at https://ainative.studio/ai-kit/dashboard.
+
+**Design requirements:**
+- Same dark `#0D1117` background
+- Same metric card style: number + label + trend indicator
+- Recharts `LineChart` with same color palette (`#4B6FED` primary, `#8A63F4` secondary)
+- Same table styling for "Top Videos" / "Twin Performance" (mirrors the model performance table)
+- Token/credit tracking section from the dashboard is repurposed to show: Views, Likes, Reach, Engagement Rate
+
+**Source reference:** `/Users/aideveloper/core/AINative-website-nextjs/app/ai-kit/dashboard/page.tsx`
+
+The `useCredits()` hook provides real-time credit data displayed in both the Sidebar (`CreditsWidget`) and the analytics page's "Platform Credits Remaining" card.
 
 ---
 
-## 5. AINative API Client (`lib/api/client.ts`)
+## 7. Feature Specifications
 
-Typed wrapper around all AINative endpoints. All requests go through this client — never raw fetch in components.
+### 7.1 Content Calendar (`/calendar`)
+- FullCalendar month/week/day view
+- Drag-and-drop reschedule → `PATCH /content/calendar/{id}`
+- Color-coded by platform
+- "New Content" → `ScheduleDrawer` with `ScriptGenerator` (uses `useChat`)
 
-```typescript
-const AINATIVE_BASE = process.env.NEXT_PUBLIC_AINATIVE_API_URL 
-  ?? 'https://api.ainative.studio/api/v1/public';
+**API:** `GET/POST/PATCH/DELETE /content/calendar`
 
-export class AINativeClient {
-  constructor(private apiKey: string) {}
+### 7.2 Script Generator (`/scripts`)
+- `useChat({ model: 'claude-sonnet-4-6' })` — streaming script generation
+- `<StreamingMessage>` renders AI output with typewriter effect
+- `<StreamingIndicator>` during generation
+- Tone selector: educational / entertaining / inspirational / professional
+- Duration slider: 15s / 30s / 60s
+- `useMemory` personalizes suggestions from past creator behavior
+- `useThread` saves conversation history per script for iterative editing
 
-  async chatCompletion(messages: Message[], model = 'claude-sonnet-4-6') { ... }
-  async generateScript(topic: string, tone: string, duration: number, platform: string) { ... }
-  async generateTTS(text: string, voiceId: string) { ... }
-  async generateAvatar(twinId: string, script: string, voiceId: string) { ... }
-  async pollAvatarStatus(jobId: string) { ... }
-  async generateCaptions(audioUrl: string) { ... }
-  async burnInCaptions(captionId: string) { ... }
-  async uploadFile(file: File) { ... }
-  async remember(agentId: string, content: string, tags: string[]) { ... }
-  async recall(agentId: string, query: string) { ... }
-  // ... full typed surface
+**Key components:** `ScriptGenerator`, `ToneSelector`, `ScriptEditor`
+
+### 7.3 AI Twin Library (`/twins`)
+- Grid of `TwinCard` components
+- Multi-step wizard: name → style preset → voice → personality tags → preview
+- Preview: `useTask` polls `POST /multimodal/avatar/generate` job
+- `useAgent` registers each twin as a named agent in AINative's agent registry
+
+### 7.4 Video Creation Studio (`/studio`)
+- Split panel: script (read-only `<StreamingMessage>`) | video preview | controls
+- TTS: `POST /multimodal/tts`
+- Avatar generation: `POST /multimodal/avatar/generate` → `useTask` polls status
+- Captions: `POST /captions/generate` (Whisper) → `CaptionEditor` timeline
+- `<RenderProgress>` component uses `useTask(jobId, { pollInterval: 3000 })`
+
+### 7.5 Bulk Reel Builder (`/bulk`)
+- CSV upload → `POST /bulk/import-scripts` → returns `job_id`
+- `useTask(jobId, { pollInterval: 5000 })` powers `<RenderQueue>`
+- Per-item status table with retry buttons
+- Download ZIP or "Publish All" when `task.status === 'completed'`
+
+### 7.6 Publishing Dashboard (`/publish`)
+- Platform OAuth connect → `GET /social/connect/{platform}`
+- `<PlatformPreview>` shows Instagram Reels / TikTok / LinkedIn frame previews
+- Publish history via `GET /publishing/history`
+- `createAgentWebhookHandler` at `app/api/webhooks/publishing/route.ts` receives delivery confirmations
+
+### 7.7 Analytics Dashboard (`/analytics`)
+- **Visual design: mirrors https://ainative.studio/ai-kit/dashboard**
+- Metrics grid: Views, Likes, Shares, Reach, Engagement Rate
+- `EngagementChart` — Recharts `LineChart` with `#4B6FED` / `#8A63F4` palette
+- `TwinPerformanceTable` — sortable by engagement
+- `useCredits()` powers "Credits Remaining" card in sidebar and analytics header
+- Export: `POST /analytics/social/export` → signed URL
+
+### 7.8 Settings (`/settings`)
+- `useCredits()` — billing + balance
+- `useAgent()` — list registered twins as agents
+- Connected platforms (same component as `/publish`)
+- API key display via `createServerClient` (server component, never client-side)
+
+---
+
+## 8. Package Dependencies
+
+```json
+{
+  "dependencies": {
+    "@ainative/next-sdk": "^1.0.1",
+    "@ainative/aikit-react": "^0.1.0",
+    "next": "^15.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "tailwindcss": "^4.0.0",
+    "zustand": "^5.0.0",
+    "@tanstack/react-query": "^5.0.0",
+    "react-hook-form": "^7.0.0",
+    "zod": "^3.0.0",
+    "@fullcalendar/react": "^6.0.0",
+    "@fullcalendar/daygrid": "^6.0.0",
+    "@fullcalendar/interaction": "^6.0.0",
+    "@dnd-kit/core": "^6.0.0",
+    "@dnd-kit/sortable": "^7.0.0",
+    "recharts": "^2.0.0",
+    "react-dropzone": "^14.0.0",
+    "video.js": "^8.0.0"
+  }
 }
 ```
 
 ---
 
-## 6. Auth Flow
+## 9. Auth Flow
 
-- Login via AINative JWT (`POST /auth/login`)
-- Token stored in httpOnly cookie via Next.js middleware
-- `middleware.ts` protects all `/dashboard/*` routes
-- API proxy at `app/api/proxy/[...path]/route.ts` — injects auth header server-side so API key never exposed to client
+```
+User visits /dashboard/* 
+  → middleware.ts: withAuth() checks session cookie
+  → No session → redirect /login
+  → Has session → passes through
+
+Login page:
+  → POST to AINative /auth/login
+  → JWT stored as httpOnly cookie via Next.js
+
+Server Components:
+  → getApiKey() reads cookie
+  → createServerClient({ apiKey }) makes authenticated calls
+  → Props passed down to Client Components as initialData
+
+Client Components:
+  → AINativeProvider holds apiKey (from env or session)
+  → useChat / useMemory / useTask / useCredits hit AINative API directly
+```
 
 ---
 
-## 7. Deployment
+## 10. Deployment
 
-- **Dockerfile:** `node:20-alpine`, multi-stage Next.js build
-- **Railway:** Deploy under AINative-Studio Railway workspace, `ai-twin-content-studio` service
+- **Dockerfile:** `node:20-alpine`, multi-stage Next.js standalone build
+- **Railway:** `ai-twin-content-studio` service under AINative-Studio workspace
+- **Domain:** `studio.ainative.studio`
 - **Env vars:**
-  - `AINATIVE_API_URL=https://api.ainative.studio/api/v1/public`
-  - `AINATIVE_API_KEY=<service key>`
-  - `NEXT_PUBLIC_AINATIVE_API_URL=https://api.ainative.studio/api/v1/public`
-  - `JWT_SECRET=<secret>`
-- **Domain:** `studio.ainative.studio` (Railway custom domain)
+  ```
+  AINATIVE_API_URL=https://api.ainative.studio/api/v1/public
+  AINATIVE_API_KEY=<service key>
+  NEXT_PUBLIC_AINATIVE_API_KEY=<public key>
+  JWT_SECRET=<secret>
+  HEYGEN_WEBHOOK_SECRET=<secret>
+  NEXT_PUBLIC_APP_URL=https://studio.ainative.studio
+  ```
 
 ---
 
-## 8. MVP Scope & Priority
+## 11. MVP Scope & Priority
 
-### MVP (Weeks 1–4)
-- [ ] Auth (login/signup via AINative JWT)
-- [ ] Script Generator (chat completions, streaming, tone presets)
-- [ ] Basic Twin Library (create/list/delete — no avatar generation yet, use style prompt only)
-- [ ] Studio (TTS voiceover + Whisper captions + video upload/download)
-- [ ] Content Calendar (CRUD + Celery scheduled publish)
-- [ ] File storage (ZeroDB)
+### MVP — Weeks 1–4 (existing AINative APIs only)
+- [ ] Auth: `withAuth` middleware + `getSession` + `createServerClient`
+- [ ] Script Generator: `useChat('claude-sonnet-4-6')` + `<StreamingMessage>` + `<StreamingIndicator>`
+- [ ] Creator memory: `useMemory` remember/recall for personalized suggestions
+- [ ] Conversation history: `useThread` for iterative script editing
+- [ ] Credits widget: `useCredits()` in sidebar nav
+- [ ] File upload: ZeroDB file API
+- [ ] Content Calendar: CRUD + Celery scheduling (core#2608)
+- [ ] Video Studio: TTS + Whisper captions (core#2610)
+- [ ] Basic Twin Library: style-preset-only (no avatar gen yet)
 
-### Phase 2 (Weeks 5–8)
-- [ ] Avatar generation (HeyGen/D-ID wrapper)
-- [ ] Bulk reel builder (CSV → Celery fan-out)
-- [ ] Instagram + TikTok OAuth + publishing
+### Phase 2 — Weeks 5–8
+- [ ] Avatar generation: `useTask` polls `POST /multimodal/avatar/generate` (core#2615)
+- [ ] Bulk reel builder: `useTask` for batch job polling (core#2609)
+- [ ] Instagram + TikTok publishing + `createAgentWebhookHandler` (core#2612)
 
-### Phase 3 (Weeks 9–12)
-- [ ] Social analytics dashboard
-- [ ] LinkedIn + YouTube publishing
-- [ ] PDF/CSV report export
-- [ ] Creator memory (personalized script suggestions via ZeroMemory)
+### Phase 3 — Weeks 9–12
+- [ ] Analytics dashboard (mirroring `/ai-kit/dashboard`) (core#2614)
+- [ ] LinkedIn + YouTube publishing (core#2613)
+- [ ] `useAgent` twin registration in AINative agent registry
+- [ ] PDF/CSV export
 
 ---
 
-## 9. Success Metrics
+## 12. Success Metrics
 
 | Metric | Target |
 |---|---|
-| Script generation to video export | < 5 minutes end-to-end |
+| Script generation to first token | < 500ms |
+| Full video export end-to-end | < 5 min |
 | Batch reel capability | 100+ reels/week |
-| Time saved per content cycle | 75% reduction vs manual workflow |
+| Time saved vs manual workflow | 75% reduction |
 | Platform publish success rate | > 98% |
-| P95 page load time | < 2s |
+| P95 page load | < 2s |
 
 ---
 
-## 10. Issue Tracker
+## 13. Backend Issues (AINative-Studio/core)
 
-All backend API gaps tracked in `AINative-Studio/core`:
-- core#2608 — Content Calendar API
-- core#2609 — Bulk Reel Queue
-- core#2610 — Caption Generation + Burn-in
-- core#2611 — AI Twin Library CRUD
-- core#2612 — Instagram + TikTok Publishing
-- core#2613 — LinkedIn + YouTube Publishing
-- core#2614 — Social Analytics Aggregation
-- core#2615 — Avatar API Wrapper (HeyGen/D-ID)
+| Issue | Feature | Depends On |
+|---|---|---|
+| [core#2608](https://github.com/AINative-Studio/core/issues/2608) | Content Calendar API | — |
+| [core#2609](https://github.com/AINative-Studio/core/issues/2609) | Bulk Reel Queue | core#2615 |
+| [core#2610](https://github.com/AINative-Studio/core/issues/2610) | Caption Generation + Burn-in | — |
+| [core#2611](https://github.com/AINative-Studio/core/issues/2611) | AI Twin Library CRUD | — |
+| [core#2612](https://github.com/AINative-Studio/core/issues/2612) | Instagram + TikTok Publishing | core#2611 |
+| [core#2613](https://github.com/AINative-Studio/core/issues/2613) | LinkedIn + YouTube Publishing | core#2612 |
+| [core#2614](https://github.com/AINative-Studio/core/issues/2614) | Social Analytics Aggregation | core#2612 |
+| [core#2615](https://github.com/AINative-Studio/core/issues/2615) | Avatar API Wrapper (HeyGen/D-ID) | core#2611 |
